@@ -29,7 +29,7 @@ db_scale = 10^(-db_gain/10);
 signal_scale = 1.0 * sqrt(db_scale); % power scale
 
 
-modu_ord = 16;
+modu_ord = 64;
 num_bits_sym_d = log2(modu_ord);
 
 scen_name_prefix = ['QAM-', num2str(modu_ord), '-scale=', num2str(signal_scale)];

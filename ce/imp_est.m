@@ -1,5 +1,6 @@
 function [H_imp, Info] = imp_est(H_noisy, GenPar, ChanInfo)
 % imp channel estimation
+% for SDR test iter=14
     Info = [];    
     H_ls_comb = H_noisy(1:GenPar.comb:end,:);
     

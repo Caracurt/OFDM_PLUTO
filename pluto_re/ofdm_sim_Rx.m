@@ -16,9 +16,10 @@ do_tx_only = false;
 do_rx_only = false;
 do_print_ofdm = false;
 do_print_ce = false;
-num_exp = 2;
-
-do_pdp_print = true;
+num_exp = 20;
+num_rep = 1; % number of repeat of data symbols
+num_rep_pilot = 4; % number of repeat pilots
+do_pdp_print = false;
 
 % tx params
 center_frequency = 2.0e9;
@@ -29,7 +30,7 @@ db_scale = 10^(-db_gain/10);
 signal_scale = 1.0 * sqrt(db_scale); % power scale
 
 
-modu_ord = 16;
+modu_ord = 4;
 num_bits_sym_d = log2(modu_ord);
 
 scen_name_prefix = ['QAM-', num2str(modu_ord), '-scale=', num2str(signal_scale)];
@@ -81,8 +82,9 @@ tx_ofdm_sym(2:N_sc_use/2 + 1) = mod_sym_pilot(N_sc_use/2 + 1 : end);
 tx_ofdm_sym(end - N_sc_use/2 + 1 : end) = mod_sym_pilot(1:N_sc_use/2);
 
 time_ofdm_sym_pilot = ifft(tx_ofdm_sym) * sqrt(N_fft) * signal_scale;
-time_ofdm_sym_cp_pilot = [time_ofdm_sym_pilot(end - CP_len + 1:end); time_ofdm_sym_pilot];
-
+%time_ofdm_sym_cp_pilot = [time_ofdm_sym_pilot(end - CP_len + 1:end); time_ofdm_sym_pilot];
+time_ofdm_sym_pilot_rep = repmat(time_ofdm_sym_pilot, num_rep_pilot, 1);
+time_ofdm_sym_cp_pilot = [time_ofdm_sym_pilot(end - CP_len + 1:end); time_ofdm_sym_pilot_rep];
 
 % data frame
 data_stream = randi([0, 1], BlockSize_d, 1);
@@ -94,7 +96,10 @@ tx_ofdm_sym(2:N_sc_use/2 + 1) = mod_sym(N_sc_use/2 + 1 : end);
 tx_ofdm_sym(end - N_sc_use/2 + 1 : end) = mod_sym(1:N_sc_use/2);
 
 time_ofdm_sym = ifft(tx_ofdm_sym) * sqrt(N_fft) * signal_scale;
-time_ofdm_sym_cp = [time_ofdm_sym(end - CP_len + 1:end); time_ofdm_sym];
+%time_ofdm_sym_cp = [time_ofdm_sym(end - CP_len + 1:end); time_ofdm_sym];
+
+time_ofdm_sym_rep = repmat(time_ofdm_sym, num_rep, 1);
+time_ofdm_sym_cp = [time_ofdm_sym(end - CP_len + 1:end); time_ofdm_sym_rep];
 
 guard_frame = zeros(guard_length, 1);
 
@@ -133,7 +138,7 @@ ber_no_cfo_ls = [];
 
 for exp_idx = 1:num_exp
     
-    samples_per_frame = 20*sig_len;
+    samples_per_frame = 5*sig_len;
 
     %RTLSDRrx = RTLSDRRxInit(center_frequency,sample_rate,samples_per_frame);
     %rx_signal = RTLSDRrx();
@@ -142,7 +147,7 @@ for exp_idx = 1:num_exp
     plutoRx = plutoRxInit(center_frequency,sample_rate,samples_per_frame);
     rx_signal = plutoRx();
     %save('rx_sig_m1.mat', 'rx_signal');
-    release(plutoRx);
+    
 
     if do_print_ofdm
         figure(20);
@@ -206,14 +211,21 @@ for exp_idx = 1:num_exp
         frame_rx_cfo = frame_rx .* cfo_corr;
 
 
-        frame_ta = frame_rx_cfo( pos_start : pos_start + N_fft + (CP_len + N_fft) + (CP_len + N_fft) );
+        frame_ta = frame_rx_cfo( pos_start : pos_start + N_fft + (CP_len + num_rep_pilot * N_fft) + (CP_len + num_rep*N_fft) );
 
         % compensate CFO
         %x_arr = (0:length(frame_ta)-1).';
         %cfo_corr = exp(1j * (-cfo_est) * x_arr);
         %frame_ta = frame_ta .* cfo_corr;
 
-        pilot_frame = frame_ta(N_fft + CP_len + 1 : N_fft + CP_len + N_fft);
+        start_pos = N_fft + CP_len + 1;
+        end_pos = start_pos - 1 + num_rep_pilot * N_fft;
+        pilot_frame = frame_ta(start_pos : end_pos);
+        
+        % combining of pilots
+        pilot_frame = reshape(pilot_frame, N_fft, num_rep_pilot);
+        pilot_frame = mean(pilot_frame, 2);
+        
         pilot_freq = fft(pilot_frame);
 
 
@@ -379,7 +391,7 @@ for exp_idx = 1:num_exp
                 plot([pdp_now(end-w_1+1:end); pdp_now(1:w_2)]);
                 grid on;
                 legend(ce_method{1});
-                pause(1);
+                %pause(1);
                 fprintf('Pause in reception');
             end
             
@@ -395,7 +407,14 @@ for exp_idx = 1:num_exp
             
 
             % data frame
-            data_frame = frame_ta(N_fft + CP_len + N_fft + CP_len + 1: N_fft + CP_len + N_fft + CP_len + N_fft);
+            start_pos = (N_fft + CP_len) + (num_rep_pilot * N_fft + CP_len + 1);
+            end_pos = start_pos + num_rep * N_fft - 1;
+            data_frame = frame_ta(start_pos : end_pos);
+            
+            % combining
+            data_frame = reshape(data_frame, N_fft, num_rep);
+            data_frame = mean(data_frame, 2);
+            
             data_freq = fft(data_frame);
 
 
@@ -471,4 +490,4 @@ for exp_idx = 1:num_exp
         plot(imag(rx_signal_0));
     end
 end
-
+release(plutoRx);

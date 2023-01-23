@@ -13,12 +13,12 @@ addpath('../ce');
 
 % sim param
 do_tx_only = false;
-do_rx_only = false;
-do_save_chan = true;
-bb_name = 'NearPoint.mat';
-
+do_rx_only = true;
+do_save_chan = false;
+bb_name = 'Dump11.mat'; % Dump1 - bedroom Dump2 far bedroom Dump3 - guestroom sofa, dump 4 - kitchen, dump5-8 balcony (7 on the top)
+% dump 9-11 corr
 do_load_bb = true;
-do_load_chan = 'NearPoint.mat';
+do_load_chan = 'Dump11.mat'; % 'NearPoint.mat' , 'Dump1.mat'
 
 if do_load_bb
     do_tx_only = false;
@@ -286,7 +286,7 @@ for exp_idx = 1:num_exp
             h_ls = pilot_freq_bb ./ mod_sym_pilot;
 
             if do_print_ce && strcmp(ce_method{1}, 'LS')
-                figure(42 + exp_idx);
+                figure(420 + exp_idx);
                 subplot(2,1,1);
                 plot(real(h_ls));
                 legend('Real LS');

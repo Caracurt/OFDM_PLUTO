@@ -14,16 +14,33 @@ addpath('../ce');
 % sim param
 do_tx_only = false;
 do_rx_only = false;
+do_save_chan = true;
+bb_name = 'NearPoint.mat';
+
+do_load_bb = true;
+do_load_chan = 'NearPoint.mat';
+
+if do_load_bb
+    do_tx_only = false;
+    do_rx_only = true;
+    do_save_chan = false;
+    load(do_load_chan);
+end
+
+
 do_print_ofdm = false;
-do_print_ce = false;
-num_exp = 20;
+do_print_ce = true;
+num_exp = 5;
 num_rep = 1; % number of repeat of data symbols
-num_rep_pilot = 4; % number of repeat pilots
-do_pdp_print = false;
+num_rep_pilot = 1; % number of repeat pilots
+do_pdp_print = true;
+
+do_dc_offset = 0;
 
 % tx params
+%center_frequency = 3.5e9;
 center_frequency = 2.0e9;
-sample_rate = 8 * 940e3;
+sample_rate = 20e6; % 8 * 940e3
 
 db_gain = 0.0;
 db_scale = 10^(-db_gain/10);
@@ -46,10 +63,15 @@ for i = 1:num_cases
     ber_all{i}.ber_arr = [];
 end
 
+if do_save_chan
+    RxBB = cell(num_exp, 1);
+end
+
+
 % OFDM message
 delta_t = 1 / sample_rate;
 
-delta_f = 7.5e3; % subcarrier spacing
+delta_f = 30e3; % subcarrier spacing
 frac_guard = 0.5;
 
 N_sc_av = fix( sample_rate / delta_f );
@@ -78,7 +100,7 @@ data_stream = randi([0, 1], BlockSize, 1);
 mod_sym_pilot = 1.0 - 2.0 .* data_stream; % BPSK modulation
 
 tx_ofdm_sym = zeros(N_fft, 1);
-tx_ofdm_sym(2:N_sc_use/2 + 1) = mod_sym_pilot(N_sc_use/2 + 1 : end);
+tx_ofdm_sym(1+do_dc_offset:N_sc_use/2 + do_dc_offset) = mod_sym_pilot(N_sc_use/2 + 1 : end);
 tx_ofdm_sym(end - N_sc_use/2 + 1 : end) = mod_sym_pilot(1:N_sc_use/2);
 
 time_ofdm_sym_pilot = ifft(tx_ofdm_sym) * sqrt(N_fft) * signal_scale;
@@ -92,7 +114,7 @@ data_stream = randi([0, 1], BlockSize_d, 1);
 mod_sym = qammod(data_stream,modu_ord,'InputType','bit','UnitAveragePower',true);
 
 tx_ofdm_sym = zeros(N_fft, 1);
-tx_ofdm_sym(2:N_sc_use/2 + 1) = mod_sym(N_sc_use/2 + 1 : end);
+tx_ofdm_sym(1+do_dc_offset:N_sc_use/2 + do_dc_offset) = mod_sym(N_sc_use/2 + 1 : end);
 tx_ofdm_sym(end - N_sc_use/2 + 1 : end) = mod_sym(1:N_sc_use/2);
 
 time_ofdm_sym = ifft(tx_ofdm_sym) * sqrt(N_fft) * signal_scale;
@@ -144,8 +166,17 @@ for exp_idx = 1:num_exp
     %rx_signal = RTLSDRrx();
     %release(RTLSDRrx);
 
-    plutoRx = plutoRxInit(center_frequency,sample_rate,samples_per_frame);
-    rx_signal = plutoRx();
+    if ~do_load_bb
+        plutoRx = plutoRxInit(center_frequency,sample_rate,samples_per_frame);
+        rx_signal = plutoRx();
+    else
+        rx_signal = RxBB{exp_idx};
+    end
+
+    if do_save_chan
+        RxBB{exp_idx} = rx_signal;
+        save(bb_name, 'RxBB');
+    end
     %save('rx_sig_m1.mat', 'rx_signal');
     
 
@@ -229,7 +260,7 @@ for exp_idx = 1:num_exp
         pilot_freq = fft(pilot_frame);
 
 
-        pilot_freq_bb = [pilot_freq(end - N_sc_use/2 + 1 : end) ; pilot_freq(2 : N_sc_use/2 + 1)];
+        pilot_freq_bb = [pilot_freq(end - N_sc_use/2 + 1 : end) ; pilot_freq(1+do_dc_offset : N_sc_use/2 + do_dc_offset)];
         
         % noise outside the band
         pilot_noise = pilot_freq(N_sc_use/2 + 2 : end - N_sc_use/2);
@@ -248,10 +279,24 @@ for exp_idx = 1:num_exp
         %mod_sym_pilot
 
         % Least square CE
+        % Least square CE
         scen_name_partial = scen_name;
         for ce_method = ce_arr
             
             h_ls = pilot_freq_bb ./ mod_sym_pilot;
+
+            if do_print_ce && strcmp(ce_method{1}, 'LS')
+                figure(42 + exp_idx);
+                subplot(2,1,1);
+                plot(real(h_ls));
+                legend('Real LS');
+                grid on;
+                subplot(2,1,2);
+                plot(imag(h_ls));
+                legend('Imag LS');
+                grid on;
+            end
+
 
             % HW/SW CE
             scen_name = [scen_name_partial, '-CE=', ce_method{1}];
@@ -392,7 +437,7 @@ for exp_idx = 1:num_exp
                 grid on;
                 legend(ce_method{1});
                 %pause(1);
-                fprintf('Pause in reception');
+                %fprintf('Pause in reception');
             end
             
             
@@ -418,7 +463,7 @@ for exp_idx = 1:num_exp
             data_freq = fft(data_frame);
 
 
-            data_freq_bb = [data_freq(end - N_sc_use/2 + 1 : end) ; data_freq(2 : N_sc_use/2 + 1)];
+            data_freq_bb = [data_freq(end - N_sc_use/2 + 1 : end) ; data_freq(1+do_dc_offset : N_sc_use/2 + do_dc_offset)];
 
             %mod_sym
 
@@ -428,7 +473,7 @@ for exp_idx = 1:num_exp
 
             evm_est = norm(demod_sym - mod_sym) ./ norm(mod_sym);
 
-            if strcmp(ce_method{1}, 'HW')
+            if strcmp(ce_method{1}, 'HW') && 0
                 figure(6 + cf_flag*10);
                 scatterplot(demod_sym);
                 grid on;
@@ -453,41 +498,8 @@ for exp_idx = 1:num_exp
     for scen_idx = 1:num_cases        
         fprintf('Num avg=%d Name=%s BER=%f\n', exp_idx, ber_all{scen_idx}.scen_name, mean( ber_all{scen_idx}.ber_arr ));
     end
-    
-    
-
-    if 0
-        figure(1);
-        title('Raw');
-        plot(real(rx_signal));
-
-        pos_high = find(abs(rx_signal) > 0.5);
-        pos_high = pos_high(1);
-        sig_cut = rx_signal(pos_high : pos_high + data_length/2 - 1);
-
-        data_len_fft = 8*length(sig_cut);
-        fft_sig = fft(sig_cut, data_len_fft);
-        figure(111);
-        plot(abs(fft_sig));
-
-        [~, pos_freq] = max(abs(fft_sig(1:end)));
-
-        freq_corr = -(pos_freq - 1)/data_len_fft;
-
-        time_arr = 0:length(rx_signal)-1;
-        time_arr = time_arr';
-        rx_signal_0 = rx_signal .* exp(1j*2*pi*freq_corr*time_arr);
-
-
-        figure(15);
-        title('Raw1');
-        plot(real(rx_signal_0));
-
-        sig_cut1 = rx_signal_0(pos_high : pos_high + data_length/2 - 1);
-
-        figure(16);
-        title('Raw1');
-        plot(imag(rx_signal_0));
-    end
 end
-release(plutoRx);
+
+if exist('plutoRx')
+    release(plutoRx);
+end

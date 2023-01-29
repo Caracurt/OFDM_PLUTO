@@ -113,6 +113,7 @@ function [H_imp, Info] = imp_est(H_noisy, GenPar, ChanInfo)
             end
             
             filt_val = (max_pdp - 1.0*sigma_noise) ./ max_pdp;
+            %filt_val = 1.0;
             
             % parabolic regression
             if (pos_max ~= 1) && (pos_max ~= win_all) && GenPar.do_quad
@@ -181,7 +182,8 @@ function [H_imp, Info] = imp_est(H_noisy, GenPar, ChanInfo)
     
     pdp_est = mean( abs(Xt(pos_unique,:)).^2 , 2);
     %pdp_est = pdp_est ./ pdp_est;
-    W_filt = A_cut_int * inv(A_cut'*A_cut + 0.75*diag(sigma_noise./pdp_est))*A_cut';
+    %W_filt = A_cut_int * inv(A_cut'*A_cut + 0.75*diag(sigma_noise./pdp_est))*A_cut';
+    W_filt = A_cut_int * inv(A_cut'*A_cut + 3.0*diag(sigma_noise./pdp_est))*A_cut';
     
     H_imp = W_filt * H_ls_comb;
     

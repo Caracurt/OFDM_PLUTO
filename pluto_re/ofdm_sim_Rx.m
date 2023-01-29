@@ -10,16 +10,21 @@ end
 close all; clear all; clc;
 rng(1);
 addpath('../ce');
+addpath('./channels')
 
 % sim param
-do_tx_only = false;
-do_rx_only = true;
+do_tx_only = true;
+do_rx_only = false;
 do_save_chan = false;
 bb_name = 'Dump11.mat'; % Dump1 - bedroom Dump2 far bedroom Dump3 - guestroom sofa, dump 4 - kitchen, dump5-8 balcony (7 on the top)
 % dump 9-11 corr
 do_load_bb = true;
-do_load_chan = 'Dump11.mat'; % 'NearPoint.mat' , 'Dump1.mat'
+do_load_chan = 'Atrium_ant.mat'; % 'NearPoint.mat' , 'Dump1.mat'
 
+delta_SNR = 100;
+
+% 'Atrium_ant.mat' - top1
+% Dump17.mat
 if do_load_bb
     do_tx_only = false;
     do_rx_only = true;
@@ -53,7 +58,7 @@ num_bits_sym_d = log2(modu_ord);
 scen_name_prefix = ['QAM-', num2str(modu_ord), '-scale=', num2str(signal_scale)];
 
 cf_arr = [1];
-ce_arr = {'LS', 'IMP',  'HW', 'SW', 'SW-1'};
+ce_arr = {'LS', 'ESPRIT', 'IMP',  'HW', 'SW', 'SW-1'};
 
 num_cases = length(cf_arr) * length(ce_arr);
 
@@ -179,6 +184,11 @@ for exp_idx = 1:num_exp
     end
     %save('rx_sig_m1.mat', 'rx_signal');
     
+    % add noise
+    Es1 = norm(rx_signal)^2 / length(rx_signal);
+    sigma0_add = 10^(-delta_SNR/10) * Es1;
+    noise_vect = (sqrt(sigma0_add)/2) * (randn(length(rx_signal), 1) + 1j*randn(length(rx_signal), 1));
+    rx_signal = rx_signal + noise_vect;
 
     if do_print_ofdm
         figure(20);
@@ -281,8 +291,9 @@ for exp_idx = 1:num_exp
         % Least square CE
         % Least square CE
         scen_name_partial = scen_name;
+        m = 0;
         for ce_method = ce_arr
-            
+            m = m + 1;
             h_ls = pilot_freq_bb ./ mod_sym_pilot;
 
             if do_print_ce && strcmp(ce_method{1}, 'LS')
@@ -318,11 +329,11 @@ for exp_idx = 1:num_exp
 
             % channel parameters
             ChanInfo.num_taps = 6;
-            ChanInfo.tau_max = 5.5e-6;
+            ChanInfo.tau_max = 1.5e-6;
 
             GenPar.do_rebuild = true;
-            GenPar.reb_num = 6;
-            GenPar.reb_base = 12;
+            GenPar.reb_num = 24;
+            GenPar.reb_base = 24;
 
             % OMP params
             GenPar.us_factor_omp = 1.0;
@@ -337,10 +348,10 @@ for exp_idx = 1:num_exp
             Nfft = GenPar.us_factor_omp * max(64, 2^(ceil(log2(GenPar.Nsc/GenPar.comb)))  );
             ChanInfo.Nfft = N_fft_ce;
             %ChanInfo.win_max = fix( 1*ChanInfo.tau_max * GenPar.delta_f * ChanInfo.Nfft  );
-            ChanInfo.win_max = 70;
+            ChanInfo.win_max = 70 * GenPar.us_factor_omp;
             %ChanInfo.win_guard = 12; % max sync error for Nfft=2048
             %ChanInfo.win_min = fix( ChanInfo.win_guard * ChanInfo.Nfft / 2048);
-            ChanInfo.win_min = 50;
+            ChanInfo.win_min = 50 * GenPar.us_factor_omp;
             % end INIT
             
             if ~strcmp(ce_method{1}, 'LS')
@@ -402,7 +413,8 @@ for exp_idx = 1:num_exp
 
                 h_freq_us = fft(h_time_filt) ./ sqrt(N_fft_ce);   
                 
-                
+                h_ls_orig = h_ls;
+
                 % IMP method
                 if strcmp(ce_method{1}, 'IMP')
                     [H_imp, Info] = imp_est(h_ls, GenPar, ChanInfo);
@@ -410,10 +422,34 @@ for exp_idx = 1:num_exp
                 elseif strcmp(ce_method{1}, 'SW-1')
                     [H_sw, Info] = sw_est(h_ls, GenPar, ChanInfo);
                     h_ls = H_sw(1:N_sc_ls);
+                elseif strcmp(ce_method{1}, 'ESPRIT')
+                    EspPar.d = 8;
+                    EspPar.Np = 48;
+                    [H_est, Info] = est_est(h_ls, EspPar);
+                    
+                    h_ls = H_est(1:N_sc_ls);
                 else
                     h_ls = h_freq_us(1:N_sc_ls);
                 end
                 
+                figure(141 + 10*m + exp_idx);
+                plot(real(h_ls_orig(:)));
+                hold on;
+                plot(real(h_ls(:)));
+                hold off
+                legend('LS', ce_method{1});
+                grid on;
+
+                figure(541 + 10*m + exp_idx);
+                Nsc_take = 256;
+                h_tmp = h_ls_orig(1:Nsc_take);
+                plot(real(h_tmp));
+               % hold on;
+                figure(841 + 10*m + exp_idx);
+                plot(abs(ifft(h_tmp)));
+               % hold off
+                legend(ce_method{1});
+                grid on;
                 
                 
                 % chane est end
@@ -429,10 +465,10 @@ for exp_idx = 1:num_exp
             [V,S,~] = svd(Rhh);
             r1 = S(1,1) / S(2,2);
                 
-            if do_pdp_print && strcmp(ce_method{1}, 'SW-1') && cf_flag == 1
+            if do_pdp_print && strcmp(ce_method{1}, 'HW') && cf_flag == 1
                 figure(k_scen + exp_idx * 10);
-                w_1 = 10;
-                w_2 = 30;
+                w_1 = 100;
+                w_2 = 100;
                 plot([pdp_now(end-w_1+1:end); pdp_now(1:w_2)]);
                 grid on;
                 legend(ce_method{1});
